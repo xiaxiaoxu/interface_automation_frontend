@@ -3,22 +3,30 @@
     <a-card :bordered="false">
       <div class="table-page-search-wrapper">
         <a-form layout="inline">
+          <a-row :gutter="48">
+            <a-col :md="6" :sm="18">
+              <a-form-item label="测试集合名称">
+                <a-input v-model="testSuiteName" placeholder=""/>
+              </a-form-item>
+            </a-col>
+            <a-col :md="!advanced && 8 || 24" :sm="24">
+              <span class="table-page-search-submitButtons" :style="advanced && { float: 'right', overflow: 'hidden' } || {} ">
+                <a-button type="primary" @click="getTestSuiteData()">查询</a-button>
+              </span>
+            </a-col>
+          </a-row>
           <a-row :gutter="6">
             <a-col :md="5" :sm="10">
-              <a-form-item label="延迟执行的事件(秒)">
-                <a-input style="width: 100px" v-model="queryParam.id" placeholder="请输入"/>
+              <a-form-item label="延迟执行的时间(秒)">
+                <a-input style="width: 100px" v-model="delayTime" placeholder="请输入"/>
               </a-form-item>
             </a-col>
             <a-col :md="4" :sm="8">
               <a-form-item label="运行环境">
                 <a-select
                   show-search
-                  default-value="dev"
-                  option-filter-prop="children"
+                  default-value="Dev"
                   style="width: 100px"
-                  :filter-option="filterOption"
-                  @focus="handleFocus"
-                  @blur="handleBlur"
                   @change="handleChange"
                 >
                   <a-select-option value="dev">
@@ -32,7 +40,7 @@
             </a-col>
             <a-col :md="5" :sm="12">
               <span class="table-page-search-submitButtons" :style="advanced && { float: 'right', overflow: 'hidden' } || {} ">
-                <a-button type="primary" @click="$refs.table.refresh(true)">运行测试集合</a-button>
+                <a-button type="primary" @click="runTestSuite">运行测试集合</a-button>
               </span>
             </a-col>
           </a-row>
@@ -84,16 +92,15 @@
           </a-row>
         </a-form>
       </div>
-
-      <s-table
-        ref="table"
-        size="default"
-        rowKey="key"
+      <a-table
+        bordered
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :columns="columns"
-        :data="loadData"
-        :alert="false"
-        showPagination="auto"
+        rowKey="id"
+        :data-source="testSuiteData"
+        :loading="loading"
+        class="select-table"
+        :pagination="pagination"
       >
         <span slot="testSuiteCase">
           <a>查看/删除集合用例</a>
@@ -121,7 +128,7 @@
             <a @click="handleSub(record)">订阅报警</a> -->
           </template>
         </span>
-      </s-table>
+      </a-table>
 
       <create-form
         ref="createModal"
@@ -139,7 +146,7 @@
 <script>
 import moment from 'moment'
 import { STable, Ellipsis } from '@/components'
-import { getRoleList, getServiceList } from '@/api/manage'
+import { getTestSuiteList, runTestSuite } from '@/api/test_suite'
 
 import StepByStepModal from './modules/StepByStepModal'
 import CreateForm from './modules/CreateForm'
@@ -151,8 +158,8 @@ const columns = [
   },
   {
     title: '测试集合名称',
-    dataIndex: 'testSuiteName',
-    scopedSlots: { customRender: 'testSuiteName' }
+    dataIndex: 'suite_desc',
+    scopedSlots: { customRender: 'suite_desc' }
   },
   {
     title: '创建人',
@@ -163,7 +170,7 @@ const columns = [
   },
   {
     title: '创建时间',
-    dataIndex: 'createdAt',
+    dataIndex: 'create_time',
     sorter: true
   },
   {
@@ -218,21 +225,33 @@ export default {
       visible: false,
       confirmLoading: false,
       mdl: null,
+      delayTime: '',
+      testSuiteData: [],
+      testSuiteName: '',
+      env: '',
       // 高级搜索 展开/关闭
       advanced: false,
       // 查询参数
       queryParam: {},
-      // 加载数据方法 必须为 Promise 对象
-      loadData: parameter => {
-        const requestParameters = Object.assign({}, parameter, this.queryParam)
-        console.log('loadData request parameters:', requestParameters)
-        return getServiceList(requestParameters)
-          .then(res => {
-            return res.result
-          })
-      },
       selectedRowKeys: [],
-      selectedRows: []
+      selectedRows: [],
+      pagination: {
+        defaultCurrent: 1, // 默认当前页数
+        defaultPageSize: 20, // 默认当前页显示数据的大小
+        total: 0, // 总数，必须先有
+        showSizeChanger: true,
+        showQuickJumper: true,
+        pageSizeOptions: ['10', '20', '30', '40'],
+        showTotal: (total) => `共 ${total} 条`, // 显示总数
+        onShowSizeChange: (current, pageSize) => {
+          this.pagination.defaultCurrent = 1
+          this.pagination.defaultPageSize = pageSize
+        },
+        // 改变每页数量时更新显示
+        onChange: (current) => {
+          this.pagination.defaultCurrent = current
+        }
+      }
     }
   },
   filters: {
@@ -244,7 +263,7 @@ export default {
     }
   },
   created () {
-    getRoleList({ t: new Date() })
+    this.getTestSuiteData()
   },
   computed: {
     rowSelection () {
@@ -255,6 +274,47 @@ export default {
     }
   },
   methods: {
+    handleChange (value) {
+      // console.log('value in handleChange:')
+      console.log(`selected ${value}`) // { key: "lucy", label: "Lucy (101)" }
+      this.env = value
+    },
+    getTestSuiteData () {
+      console.log('in getTestSuiteData')
+      const params = {
+        test_suite_name: this.testSuiteName
+      }
+      this.loading = true
+      getTestSuiteList(params).then(res => {
+       this.testSuiteData = res.data
+       this.loading = false
+      }).catch(err => {
+        this.$message.error(err.message)
+      }).finally(() => {
+        this.loading = false
+      })
+    },
+    runTestSuite () {
+      console.log('in runTestSuite')
+      if (this.selectedRowKeys.length === 0) {
+          this.$message.info('请选择用例后再运行')
+          console.log('!this.selectedRowKeys:', !this.selectedRowKeys)
+      } else {
+        this.$message.info('提交运行成功')
+        this.selectedRowKeys = []
+        const params = {
+          env: this.env,
+          testcase_ids: this.selectedRowKeys,
+          delay_time: this.delayTime
+        }
+        console.log('params in runTestSuite: ', params)
+        runTestSuite(params).then(res => {
+        console.log(res.message)
+        }).catch(err => {
+          this.$message.error(err.message)
+        })
+      }
+    },
     handleAdd () {
       this.mdl = null
       this.visible = true
@@ -321,6 +381,8 @@ export default {
       }
     },
     onSelectChange (selectedRowKeys, selectedRows) {
+      console.log('selectedRowKeys: ', selectedRowKeys)
+      console.log('selectedRows: ', selectedRows)
       this.selectedRowKeys = selectedRowKeys
       this.selectedRows = selectedRows
     },

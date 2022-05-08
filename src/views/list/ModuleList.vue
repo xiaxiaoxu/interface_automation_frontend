@@ -6,12 +6,12 @@
           <a-row :gutter="48">
             <a-col :md="6" :sm="18">
               <a-form-item label="所属项目名称">
-                <a-input v-model="queryParam.id" placeholder=""/>
+                <a-input v-model="projectName" placeholder=""/>
               </a-form-item>
             </a-col>
             <a-col :md="6" :sm="18">
               <a-form-item label="模块名称">
-                <a-input v-model="queryParam.id" placeholder=""/>
+                <a-input v-model="moduleName" placeholder=""/>
               </a-form-item>
             </a-col>
             <!-- <a-col :md="8" :sm="24">
@@ -55,7 +55,7 @@
             </template>
             <a-col :md="!advanced && 8 || 24" :sm="24">
               <span class="table-page-search-submitButtons" :style="advanced && { float: 'right', overflow: 'hidden' } || {} ">
-                <a-button type="primary" @click="$refs.table.refresh(true)">查询</a-button>
+                <a-button type="primary" @click="getModuleData()">查询</a-button>
                 <a-button style="margin-left: 8px" @click="() => this.queryParam = {}">重置</a-button>
                 <!-- <a @click="toggleAdvanced" style="margin-left: 8px">
                   {{ advanced ? '收起' : '展开' }}
@@ -80,17 +80,16 @@
           </a-button>
         </a-dropdown>
       </div>
-
-      <s-table
-        ref="table"
-        size="default"
-        rowKey="key"
+      <a-table
+        bordered
         :columns="columns"
-        :data="loadData"
-        :alert="false"
-        showPagination="auto"
+        rowKey="id"
+        :data-source="moduleData"
+        :loading="loading"
+        class="select-table"
+        :pagination="pagination"
       >
-        <span slot="serial" slot-scope="text, record, index">
+        <span slot="id" slot-scope="text, record, index">
           {{ index + 1 }}
         </span>
         <span slot="status" slot-scope="text">
@@ -107,7 +106,7 @@
             <a @click="handleSub(record)">订阅报警</a> -->
           </template>
         </span>
-      </s-table>
+      </a-table>
 
       <create-form
         ref="createModal"
@@ -125,45 +124,44 @@
 <script>
 import moment from 'moment'
 import { STable, Ellipsis } from '@/components'
-import { getRoleList, getServiceList } from '@/api/manage'
-
+import { getModuleList } from '@/api/module'
 import StepByStepModal from './modules/StepByStepModal'
 import CreateForm from './modules/CreateForm'
 
 const columns = [
   {
     title: '编号',
-    scopedSlots: { customRender: 'serial' }
+    scopedSlots: { customRender: 'id' }
   },
   {
     title: '模块名称',
-    dataIndex: 'moduleName',
-    scopedSlots: { customRender: 'moduleName' }
+    dataIndex: 'module_name',
+    scopedSlots: { customRender: 'module_name' }
   },
   {
     title: '所属项目',
-    dataIndex: 'projectOfModule',
+    dataIndex: 'project_name',
     sorter: true,
     needTotal: false
     // customRender: (text) => text + ' 次'
   },
   {
     title: '测试负责人',
-    dataIndex: 'developOwner'
+    dataIndex: 'test_owner'
   },
   {
     title: '模块描述',
-    dataIndex: 'moduleDesc',
-    scopedSlots: { customRender: 'moduleDesc' }
+    dataIndex: 'module_desc',
+    scopedSlots: { customRender: 'module_desc' }
   },
   {
     title: '创建时间',
-    dataIndex: 'createdAt',
+    dataIndex: 'create_time',
     sorter: true
   },
   {
     title: '更新时间',
-    dataIndex: 'updatedAt',
+    dataIndex: 'update_time',
     sorter: true
   },
   {
@@ -206,23 +204,35 @@ export default {
     return {
       // create model
       visible: false,
+      loading: false,
       confirmLoading: false,
       mdl: null,
       // 高级搜索 展开/关闭
       advanced: false,
+      pagination: {
+          defaultCurrent: 1, // 默认当前页数
+          defaultPageSize: 20, // 默认当前页显示数据的大小
+          total: 0, // 总数，必须先有
+          showSizeChanger: true,
+          showQuickJumper: true,
+          pageSizeOptions: ['10', '20', '30', '40'],
+          showTotal: (total) => `共 ${total} 条`, // 显示总数
+          onShowSizeChange: (current, pageSize) => {
+            this.pagination.defaultCurrent = 1
+            this.pagination.defaultPageSize = pageSize
+          },
+          // 改变每页数量时更新显示
+          onChange: (current) => {
+            this.pagination.defaultCurrent = current
+          }
+        },
       // 查询参数
       queryParam: {},
-      // 加载数据方法 必须为 Promise 对象
-      loadData: parameter => {
-        const requestParameters = Object.assign({}, parameter, this.queryParam)
-        console.log('loadData request parameters:', requestParameters)
-        return getServiceList(requestParameters)
-          .then(res => {
-            return res.result
-          })
-      },
+      moduleData: [],
       selectedRowKeys: [],
-      selectedRows: []
+      selectedRows: [],
+      projectName: '',
+      moduleName: ''
     }
   },
   filters: {
@@ -234,7 +244,7 @@ export default {
     }
   },
   created () {
-    getRoleList({ t: new Date() })
+    this.getModuleData()
   },
   computed: {
     rowSelection () {
@@ -245,6 +255,21 @@ export default {
     }
   },
   methods: {
+    getModuleData () {
+      console.log('in getProjectData')
+      const params = {
+        project_name: this.projectName,
+        module_name: this.moduleName
+      }
+      this.loading = true
+      getModuleList(params).then(res => {
+       this.moduleData = res.data
+      }).catch(err => {
+        this.$message.error(err.message)
+      }).finally(() => {
+        this.loading = false
+      })
+    },
     handleAdd () {
       this.mdl = null
       this.visible = true
